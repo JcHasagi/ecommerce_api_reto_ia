@@ -1,7 +1,7 @@
 from collections import Counter
 
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import FastAPI, Depends, HTTPException, Query
+from sqlalchemy.orm import Session, joinedload, selectinload
 import models, schemas, database
 
 app = FastAPI()
@@ -26,9 +26,48 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)
     db.refresh(U)
     return U
 
+@app.get("/users/{user_id}/orders", response_model=list[schemas.OrderOut])
+def get_user_orders(user_id: int, db: Session = Depends(database.get_db)):
+    """Historial de pedidos de un usuario, del más reciente al más antiguo, con los productos comprados."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    # Carga líneas y productos en dos consultas fijas, en vez de una por pedido y otra por línea (N+1)
+    orders = (
+        db.query(models.Order)
+        .filter(models.Order.user_id == user_id)
+        .options(selectinload(models.Order.items).joinedload(models.OrderItem.product))
+        .order_by(models.Order.created_at.desc(), models.Order.id.desc())
+        .all()
+    )
+    return [
+        schemas.OrderOut(
+            id=o.id,
+            created_at=o.created_at,
+            total_price=o.total_price,
+            items=[
+                schemas.OrderItemOut(
+                    product_id=item.product_id,
+                    product_name=item.product.name,
+                    quantity=item.quantity,
+                    unit_price=item.unit_price,
+                )
+                for item in o.items
+            ],
+        )
+        for o in orders
+    ]
+
 @app.get("/products/")
-def get_products(db: Session = Depends(database.get_db)):
-    return db.query(models.Product).all()
+def get_products(
+    limit: int = Query(20, ge=1, le=100, description="Número máximo de productos a devolver"),
+    offset: int = Query(0, ge=0, description="Número de productos a saltar"),
+    db: Session = Depends(database.get_db),
+):
+    """Lista los productos por páginas, ordenados por id."""
+    # Sin un orden fijo, la base de datos puede devolver las páginas en distinto orden en cada consulta
+    return db.query(models.Product).order_by(models.Product.id).offset(offset).limit(limit).all()
 
 @app.post("/orders/")
 def process_order(order: schemas.OrderCreate, db: Session = Depends(database.get_db)):
