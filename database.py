@@ -15,7 +15,8 @@ def get_database_url() -> str:
 DATABASE_URL = get_database_url()
 
 
-engine = create_engine(DATABASE_URL)
+# pool_pre_ping descarta las conexiones que MySQL cerró por inactividad (wait_timeout)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
