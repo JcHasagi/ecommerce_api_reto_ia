@@ -6,9 +6,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("Falta la variable de entorno DATABASE_URL: copia .env.example como .env y complétala")
+def get_database_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError("Falta la variable de entorno DATABASE_URL: copia .env.example como .env y complétala")
+    return url
+
+DATABASE_URL = get_database_url()
 
 
 engine = create_engine(DATABASE_URL)
